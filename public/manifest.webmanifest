@@ -1,0 +1,25 @@
+{
+  "name": "AERO Fitness",
+  "short_name": "AERO",
+  "description": "Track your workouts, log your progress, and hit your goals with AERO Fitness.",
+  "start_url": "/home",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#effcfa",
+  "theme_color": "#0f3d40",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
