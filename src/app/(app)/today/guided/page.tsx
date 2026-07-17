@@ -220,7 +220,21 @@ export default function GuidedModePage() {
       return v.trim() !== "" && Number.isFinite(n) ? n : null;
     };
 
-    const rows = items.map((item) => {
+    interface InsertRow {
+      user_id: string;
+      date: string;
+      day_type: string;
+      exercise_id: string;
+      exercise_name: string;
+      muscle_group: string;
+      sets_done: number | null;
+      reps_done: number | null;
+      weight_used: number | null;
+      completed: boolean;
+      feeling: Feeling | null;
+    }
+
+    const rows: InsertRow[] = items.map((item) => {
       const r = results[item.id];
       return {
         user_id: userId,
