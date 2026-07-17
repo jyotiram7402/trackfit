@@ -7,13 +7,13 @@ import type {
 } from "@/types/workout";
 
 /**
- * YouTube search-embed URL: the player loads the top search result for
- * "<name> how to perform proper form", so every exercise gets a real demo
- * video without hardcoding (and risking dead) video ids.
+ * YouTube search-results URL for "<name> proper form". YouTube discontinued
+ * search-playlist embeds, so demo buttons open this in a new tab (the
+ * YouTube app on phones) — always shows current, working videos.
  */
 export function demoVideoUrl(name: string): string {
-  const query = `${name} how to perform proper form`;
-  return `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}`;
+  const query = `${name} proper form how to`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
 function ex(

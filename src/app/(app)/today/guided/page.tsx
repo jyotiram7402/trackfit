@@ -11,6 +11,7 @@ import { CARDIO_BY_ID, EXERCISES_BY_ID, demoVideoUrl } from "@/data/exercises";
 import { getExerciseGuide } from "@/data/exerciseGuides";
 import { addDays, toISODate } from "@/lib/dates";
 import { hardLastTimeIds, type CoachLog } from "@/lib/coach";
+import WatchDemoLink from "@/components/WatchDemoLink";
 import type { Feeling } from "@/types/db";
 
 // ---------- session model ----------
@@ -556,16 +557,8 @@ function ExerciseScreen({
         </Link>
       </h1>
 
-      {/* Only the current exercise's video is ever mounted */}
-      <div className="mt-3 aspect-video overflow-hidden rounded-card bg-navy-900 shadow-card">
-        <iframe
-          src={item.videoUrl}
-          title={`How to perform ${item.name}`}
-          className="h-full w-full"
-          loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+      <div className="mt-3">
+        <WatchDemoLink url={item.videoUrl} name={item.name} hero />
       </div>
 
       <div className="card mt-4 bg-aero-50 py-4 text-center">
@@ -817,15 +810,8 @@ function CardioScreen({
       </p>
       <h1 className="mt-1 text-2xl font-extrabold text-navy-900">{name}</h1>
 
-      <div className="mt-3 aspect-video overflow-hidden rounded-card bg-navy-900 shadow-card">
-        <iframe
-          src={videoUrl}
-          title={`How to perform ${name}`}
-          className="h-full w-full"
-          loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+      <div className="mt-3">
+        <WatchDemoLink url={videoUrl} name={name} hero />
       </div>
 
       <div className="card mt-4 bg-aero-50 py-4 text-center">

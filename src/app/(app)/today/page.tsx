@@ -9,6 +9,7 @@ import { getTodayWeekday } from "@/data/weeklySplit";
 import { CARDIO_BY_ID, EXERCISES_BY_ID, demoVideoUrl } from "@/data/exercises";
 import { addDays, toISODate } from "@/lib/dates";
 import { hardLastTimeIds, type CoachLog } from "@/lib/coach";
+import WatchDemoLink from "@/components/WatchDemoLink";
 import type { GeneratedTrainingDay } from "@/types/plan";
 
 /** One loggable item on today's list (strength, abs, or cardio). */
@@ -343,7 +344,6 @@ function ExerciseCard({
   feltHard: boolean;
   onChange: (patch: Partial<Entry>) => void;
 }) {
-  const [showVideo, setShowVideo] = useState(false);
   const [showLog, setShowLog] = useState(false);
 
   return (
@@ -415,13 +415,7 @@ function ExerciseCard({
       </div>
 
       <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setShowVideo((v) => !v)}
-          className="flex-1 rounded-xl bg-navy-800 px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-navy-700"
-        >
-          {showVideo ? "Hide video" : "▶ How to perform"}
-        </button>
+        <WatchDemoLink url={item.videoUrl} name={item.name} />
         {!item.isCardio && (
           <button
             type="button"
@@ -432,20 +426,6 @@ function ExerciseCard({
           </button>
         )}
       </div>
-
-      {/* Video iframe only mounts when opened — nothing loads up front */}
-      {showVideo && (
-        <div className="mt-3 aspect-video overflow-hidden rounded-xl bg-navy-900">
-          <iframe
-            src={item.videoUrl}
-            title={`How to perform ${item.name}`}
-            className="h-full w-full"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      )}
 
       {showLog && !item.isCardio && (
         <div className="mt-3 grid grid-cols-3 gap-2">

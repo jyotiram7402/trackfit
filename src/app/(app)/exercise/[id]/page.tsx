@@ -6,6 +6,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { EXERCISES_BY_ID } from "@/data/exercises";
 import { getExerciseGuide } from "@/data/exerciseGuides";
+import WatchDemoLink from "@/components/WatchDemoLink";
 
 const DIFFICULTY_BADGE: Record<string, string> = {
   beginner: "bg-aero-100 text-aero-800",
@@ -78,15 +79,8 @@ export default function ExerciseDetailPage() {
       <BackButton onClick={() => router.back()} />
 
       {/* Demo video */}
-      <div className="mt-4 aspect-video overflow-hidden rounded-card bg-navy-900 shadow-card">
-        <iframe
-          src={exercise.videoUrl}
-          title={`How to perform ${exercise.name}`}
-          className="h-full w-full"
-          loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        />
+      <div className="mt-4">
+        <WatchDemoLink url={exercise.videoUrl} name={exercise.name} hero />
       </div>
 
       <h1 className="mt-5 text-2xl font-extrabold text-navy-900">
