@@ -1,5 +1,12 @@
 import { CARDIO_ACTIVITIES, EXERCISES } from "@/data/exercises";
-import { WEEKLY_SPLIT } from "@/data/weeklySplit";
+import {
+  ALL_WEEKDAYS,
+  DEFAULT_SPLIT_KEYS,
+  FOCUS_PAIRS,
+  WEEKDAYS_MON_SAT,
+  normalizeSplitKeys,
+  type SplitDayKey,
+} from "@/data/weeklySplit";
 import type { FitnessLevel, Goal } from "@/types/db";
 import type {
   GeneratedDay,
@@ -32,13 +39,6 @@ function prescriptionFor(goal: Goal, level: FitnessLevel): Prescription {
   };
 }
 
-/** Which training days carry abs work, per goal. */
-const ABS_DAYS: Record<Goal, Weekday[]> = {
-  lose: ["monday", "tuesday", "thursday", "friday"],
-  gain: ["monday", "wednesday", "friday"],
-  maintain: ["monday", "wednesday", "friday"],
-};
-
 const ABS_PER_DAY = 2;
 
 /** Beginners get 2 exercises per muscle; everyone else gets 3. */
@@ -65,14 +65,6 @@ function shuffle<T>(items: T[]): T[] {
   return arr;
 }
 
-/**
- * Difficulty preference by level. Lower rank = picked first.
- * - Beginners strongly prefer beginner-tagged (machines, bodyweight, cables);
- *   every pool has ≥4 of them, enough for a full beginner week (2 × 2 days).
- * - Intermediates draw from beginner+intermediate before advanced lifts.
- * - Advanced prefers the heavier intermediate/advanced lifts, using
- *   beginner-tagged staples as the fallback.
- */
 function tierRank(exercise: Exercise, level: FitnessLevel): number {
   switch (level) {
     case "beginner":
@@ -84,10 +76,7 @@ function tierRank(exercise: Exercise, level: FitnessLevel): number {
   }
 }
 
-/**
- * Shuffle a pool, then (stable-)sort by difficulty-tier for the user's level,
- * with exercises NOT used last week ahead of repeats within each tier.
- */
+/** Shuffle, then rank by difficulty tier and freshness (new-this-week first). */
 function rankPool(
   pool: Exercise[],
   level: FitnessLevel,
@@ -98,6 +87,32 @@ function rankPool(
       tierRank(a, level) - tierRank(b, level) ||
       Number(usedLastWeek.has(a.id)) - Number(usedLastWeek.has(b.id))
   );
+}
+
+/**
+ * Take n exercises from a pool, ranked. Cycles (allowing repeats) only when
+ * n exceeds the pool size — e.g. a user who trains one muscle 4+ days a week.
+ */
+function takeRanked(
+  pool: Exercise[],
+  level: FitnessLevel,
+  usedLastWeek: Set<string>,
+  n: number
+): Exercise[] {
+  const ranked = rankPool(pool, level, usedLastWeek);
+  if (n <= ranked.length) return ranked.slice(0, n);
+  const out: Exercise[] = [];
+  for (let i = 0; out.length < n; i++) out.push(ranked[i % ranked.length]);
+  return out;
+}
+
+/** Pick k evenly-spread items from a list (used to place abs days). */
+function spreadPick<T>(items: T[], k: number): T[] {
+  if (k >= items.length) return [...items];
+  const out: T[] = [];
+  const step = items.length / k;
+  for (let i = 0; i < k; i++) out.push(items[Math.floor(i * step)]);
+  return out;
 }
 
 function toPlanned(
@@ -131,17 +146,25 @@ export interface GenerateOptions {
   weekStart: string;
   /** Exercise ids from the previous week's plan, to vary this week's picks. */
   avoidExerciseIds?: Set<string>;
+  /** Custom Mon–Sat focus keys; defaults to the classic split. */
+  splitKeys?: SplitDayKey[];
+}
+
+interface TrainingSlot {
+  day: Weekday;
+  label: string;
+  focus: [MuscleGroup, MuscleGroup];
 }
 
 /**
- * Generate a full week honoring the split (Mon–Sat, Sunday rest).
+ * Generate a full week from the (possibly customized) split.
  *
- * No-repeat guarantee: each muscle group appears on two days per week; we
- * draw its two sessions' exercises from one ranked pool without replacement,
- * so the same muscle never sees the same exercise twice in one week. Abs
- * draws 2 per abs day from its own ranked queue, and cardio assigns a
- * different activity to each training day (beginners skip the high-impact
- * options).
+ * No-repeat guarantee: we count how many sessions each muscle gets across
+ * the week, draw that many × (exercises-per-muscle) DISTINCT exercises up
+ * front, and hand successive sessions non-overlapping slices — so a muscle
+ * never repeats an exercise in a week (it only cycles if a user trains one
+ * muscle so often that the 10-exercise pool runs out). Abs and cardio are
+ * drawn the same way.
  */
 export function generateWeeklyPlan(
   goal: Goal,
@@ -149,59 +172,71 @@ export function generateWeeklyPlan(
   options: GenerateOptions
 ): GeneratedPlan {
   const prescription = prescriptionFor(goal, level);
-  const absDays = ABS_DAYS[goal];
   const avoid = options.avoidExerciseIds ?? new Set<string>();
   const perMuscle = exercisesPerMuscle(level);
   const isBeginner = level === "beginner";
 
-  // Distinct picks per muscle group, split between its two weekly sessions.
-  const sessionPicks = new Map<MuscleGroup, [Exercise[], Exercise[]]>();
-  const muscles: MuscleGroup[] = ["chest", "triceps", "back", "biceps", "legs", "shoulders"];
-  for (const muscle of muscles) {
-    const picks = rankPool(EXERCISES[muscle], level, avoid).slice(0, perMuscle * 2);
-    sessionPicks.set(muscle, [picks.slice(0, perMuscle), picks.slice(perMuscle)]);
-  }
+  const splitKeys = normalizeSplitKeys(options.splitKeys ?? DEFAULT_SPLIT_KEYS);
 
-  // Abs: one ranked queue consumed 2 at a time across the week's abs days.
-  const absQueue = rankPool(EXERCISES.abs, level, avoid);
+  // Mon–Sat training slots (Sunday is always rest).
+  const slots: TrainingSlot[] = [];
+  WEEKDAYS_MON_SAT.forEach((day, i) => {
+    const key = splitKeys[i];
+    if (key !== "rest") {
+      slots.push({ day, label: FOCUS_PAIRS[key].label, focus: FOCUS_PAIRS[key].focus });
+    }
+  });
+
+  // Count sessions per muscle, then build one distinct queue per muscle.
+  const muscleCount = new Map<MuscleGroup, number>();
+  for (const slot of slots) {
+    for (const m of slot.focus) muscleCount.set(m, (muscleCount.get(m) ?? 0) + 1);
+  }
+  const muscleQueue = new Map<MuscleGroup, Exercise[]>();
+  for (const [m, count] of muscleCount) {
+    muscleQueue.set(m, takeRanked(EXERCISES[m], level, avoid, count * perMuscle));
+  }
+  const muscleCursor = new Map<MuscleGroup, number>();
+
+  // Abs: spread across a subset of the training days.
+  const absDayCount = Math.min(prescription.absDaysPerWeek, slots.length);
+  const absDays = new Set(spreadPick(slots.map((s) => s.day), absDayCount));
+  const absQueue = takeRanked(EXERCISES.abs, level, avoid, absDayCount * ABS_PER_DAY);
   let absCursor = 0;
 
-  // Cardio: a different activity each training day; beginners get low-impact.
+  // Cardio: one different activity per training day.
   const cardioQueue = shuffle(
     isBeginner ? CARDIO_ACTIVITIES.filter((c) => !c.intense) : CARDIO_ACTIVITIES
   );
   let cardioCursor = 0;
 
-  // Second time a muscle pair appears, note which day had the first session.
-  const firstSessionDay = new Map<string, Weekday>();
-  const sessionIndex = new Map<MuscleGroup, number>();
+  const slotByDay = new Map(slots.map((s) => [s.day, s]));
+  const firstDayForLabel = new Map<string, Weekday>();
 
-  const days: GeneratedDay[] = WEEKLY_SPLIT.map((splitDay) => {
-    if (splitDay.kind === "rest") {
-      return { day: splitDay.day, kind: "rest" as const, label: splitDay.label };
+  const days: GeneratedDay[] = ALL_WEEKDAYS.map((day) => {
+    const slot = slotByDay.get(day);
+    if (!slot) {
+      return { day, kind: "rest" as const, label: "Rest & Recovery" };
     }
 
-    const exercises = splitDay.focus.flatMap((muscle) => {
-      const nth = sessionIndex.get(muscle) ?? 0;
-      sessionIndex.set(muscle, nth + 1);
-      return sessionPicks
+    const exercises = slot.focus.flatMap((muscle) => {
+      const cursor = muscleCursor.get(muscle) ?? 0;
+      muscleCursor.set(muscle, cursor + perMuscle);
+      return muscleQueue
         .get(muscle)!
-        [Math.min(nth, 1)].map((e) =>
-          toPlanned(e, prescription.sets, prescription.reps, isBeginner)
-        );
+        .slice(cursor, cursor + perMuscle)
+        .map((e) => toPlanned(e, prescription.sets, prescription.reps, isBeginner));
     });
 
     let repeatNote: string | null = null;
-    const pairKey = splitDay.focus.join("+");
-    const firstDay = firstSessionDay.get(pairKey);
+    const firstDay = firstDayForLabel.get(slot.label);
     if (firstDay) {
-      repeatNote = `Different from ${DAY_NAMES[firstDay]}'s ${splitDay.label.toLowerCase()} exercises`;
+      repeatNote = `Different from ${DAY_NAMES[firstDay]}'s ${slot.label.toLowerCase()} exercises`;
     } else {
-      firstSessionDay.set(pairKey, splitDay.day);
+      firstDayForLabel.set(slot.label, day);
     }
 
-    // Abs use their own defaults (planks are timed, not repped).
-    const abs = absDays.includes(splitDay.day)
+    const abs = absDays.has(day)
       ? absQueue
           .slice(absCursor, (absCursor += ABS_PER_DAY))
           .map((e) => toPlanned(e, e.defaultSets, e.defaultReps, isBeginner))
@@ -215,10 +250,10 @@ export function generateWeeklyPlan(
     };
 
     return {
-      day: splitDay.day,
+      day,
       kind: "training" as const,
-      label: splitDay.label,
-      focus: splitDay.focus,
+      label: slot.label,
+      focus: slot.focus,
       exercises,
       abs,
       cardio,

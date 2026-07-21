@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -41,6 +41,9 @@ export default function ProfilePage() {
     <section className="mx-auto max-w-xl">
       <h1 className="text-2xl font-extrabold text-navy-900">Profile</h1>
       <p className="mt-1 text-sm text-navy-700/70">{session.user.email}</p>
+
+      <AvatarUploader />
+
 
       {bmi !== null && (
         <div className="card mt-6 flex items-center gap-5">
@@ -132,6 +135,19 @@ export default function ProfilePage() {
           )}
         </>
       )}
+
+      <div className="card mt-4">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-navy-700/60">
+          Training
+        </h2>
+        <Link
+          href="/settings/split"
+          className="mt-3 flex items-center justify-between rounded-xl border-2 border-aero-200 px-4 py-3 text-sm font-semibold text-navy-800 transition-colors hover:border-aero-400"
+        >
+          <span>🗓️ Customize weekly split — pick what you train each day</span>
+          <span aria-hidden>→</span>
+        </Link>
+      </div>
 
       <div className="card mt-4">
         <h2 className="text-sm font-bold uppercase tracking-wider text-navy-700/60">
@@ -367,6 +383,107 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <dt className="text-navy-700/50">{label}</dt>
       <dd className="font-semibold text-navy-900">{value}</dd>
+    </div>
+  );
+}
+
+function AvatarUploader() {
+  const { session, profile, refreshProfile } = useAuth();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!session) return null;
+  const userId = session.user.id;
+
+  const initials =
+    (profile?.name ?? "?")
+      .trim()
+      .split(/\s+/)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?";
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setErr("Please choose an image file.");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setErr("Image must be under 3 MB.");
+      return;
+    }
+
+    setUploading(true);
+    setErr(null);
+    const supabase = getSupabaseClient();
+    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const path = `${userId}/avatar.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("avatars")
+      .upload(path, file, { upsert: true });
+    if (upErr) {
+      setErr(upErr.message);
+      setUploading(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+    const url = `${data.publicUrl}?v=${Date.now()}`;
+    const { error: dbErr } = await supabase
+      .from("profiles")
+      .update({ avatar_url: url })
+      .eq("id", userId);
+    if (dbErr) {
+      setErr(dbErr.message);
+      setUploading(false);
+      return;
+    }
+
+    await refreshProfile();
+    setUploading(false);
+  }
+
+  return (
+    <div className="mt-4 flex items-center gap-4">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-aero-200 bg-aero-100">
+        {profile?.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatar_url}
+            alt="Profile"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="text-2xl font-extrabold text-aero-700">{initials}</span>
+        )}
+      </div>
+      <div>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="rounded-full border-2 border-aero-300 px-4 py-2 text-sm font-bold text-aero-700 transition-colors hover:border-aero-500 disabled:opacity-60"
+        >
+          {uploading
+            ? "Uploading…"
+            : profile?.avatar_url
+              ? "Change photo"
+              : "Add photo"}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          onChange={onFile}
+          className="hidden"
+        />
+        {err && <p className="mt-1 text-xs font-medium text-red-600">{err}</p>}
+      </div>
     </div>
   );
 }

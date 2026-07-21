@@ -1,6 +1,7 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { addDays, getWeekStart, toISODate } from "@/lib/dates";
 import { collectExerciseIds, generateWeeklyPlan } from "@/lib/planGenerator";
+import { normalizeSplitKeys } from "@/data/weeklySplit";
 import type { FitnessLevel, Goal } from "@/types/db";
 import type { GeneratedPlan } from "@/types/plan";
 
@@ -20,19 +21,30 @@ async function fetchPlan(
   return (data?.plan_json as GeneratedPlan) ?? null;
 }
 
+function buildPlan(
+  goal: Goal | null,
+  fitnessLevel: FitnessLevel | null,
+  splitKeys: string[] | null,
+  weekStartISO: string,
+  avoidExerciseIds?: Set<string>
+): GeneratedPlan {
+  return generateWeeklyPlan(goal ?? "maintain", fitnessLevel ?? "intermediate", {
+    weekStart: weekStartISO,
+    avoidExerciseIds,
+    splitKeys: normalizeSplitKeys(splitKeys ?? undefined),
+  });
+}
+
 /**
  * Return this calendar week's plan, generating and saving it exactly once.
- *
- * - Already in weekly_plans → return it unchanged (the week stays fixed).
- * - Otherwise generate a fresh plan — passing last week's exercise ids so
- *   picks vary week to week — and insert it. The unique(user_id,
- *   week_start_date) constraint makes double-generation impossible: if a
- *   second tab races us, we re-read the winner's plan instead.
+ * The week stays fixed once created (changing goal/level/split only affects
+ * future weeks — or use regenerateWeeklyPlan to rebuild now).
  */
 export async function getOrCreateWeeklyPlan(
   userId: string,
   goal: Goal | null,
-  fitnessLevel: FitnessLevel | null
+  fitnessLevel: FitnessLevel | null,
+  splitKeys: string[] | null
 ): Promise<GeneratedPlan> {
   const supabase = getSupabaseClient();
   const weekStart = getWeekStart(new Date());
@@ -50,10 +62,7 @@ export async function getOrCreateWeeklyPlan(
     // Previous week is a nice-to-have; never block generation on it.
   }
 
-  const plan = generateWeeklyPlan(goal ?? "maintain", fitnessLevel ?? "intermediate", {
-    weekStart: weekStartISO,
-    avoidExerciseIds,
-  });
+  const plan = buildPlan(goal, fitnessLevel, splitKeys, weekStartISO, avoidExerciseIds);
 
   const { error } = await supabase.from("weekly_plans").insert({
     user_id: userId,
@@ -70,5 +79,33 @@ export async function getOrCreateWeeklyPlan(
     throw new Error(error.message);
   }
 
+  return plan;
+}
+
+/**
+ * Force-rebuild the CURRENT week from scratch with the given settings —
+ * used when a user changes their split and wants it to apply today (e.g. the
+ * gym's chest machines are all taken). Logged workouts are untouched; only
+ * the upcoming plan changes.
+ */
+export async function regenerateWeeklyPlan(
+  userId: string,
+  goal: Goal | null,
+  fitnessLevel: FitnessLevel | null,
+  splitKeys: string[] | null
+): Promise<GeneratedPlan> {
+  const supabase = getSupabaseClient();
+  const weekStartISO = toISODate(getWeekStart(new Date()));
+
+  const plan = buildPlan(goal, fitnessLevel, splitKeys, weekStartISO);
+
+  const { error } = await supabase
+    .from("weekly_plans")
+    .upsert(
+      { user_id: userId, week_start_date: weekStartISO, plan_json: plan },
+      { onConflict: "user_id,week_start_date" }
+    );
+
+  if (error) throw new Error(error.message);
   return plan;
 }

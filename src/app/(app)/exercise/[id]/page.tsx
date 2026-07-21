@@ -6,7 +6,9 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { EXERCISES_BY_ID } from "@/data/exercises";
 import { getExerciseGuide } from "@/data/exerciseGuides";
+import { MUSCLE_INFO, exerciseRating } from "@/data/exerciseMeta";
 import WatchDemoLink from "@/components/WatchDemoLink";
+import MuscleMap from "@/components/MuscleMap";
 
 const DIFFICULTY_BADGE: Record<string, string> = {
   beginner: "bg-aero-100 text-aero-800",
@@ -98,6 +100,9 @@ export default function ExerciseDetailPage() {
         <Badge className={DIFFICULTY_BADGE[exercise.difficulty]}>
           {exercise.difficulty[0].toUpperCase() + exercise.difficulty.slice(1)}
         </Badge>
+        <Badge className="bg-amber-100 text-amber-800">
+          ★ {exerciseRating(exercise).toFixed(1)}
+        </Badge>
       </div>
 
       {/* Beginner start suggestion */}
@@ -111,6 +116,30 @@ export default function ExerciseDetailPage() {
         <p className="mt-1 text-sm text-navy-700/60">
           Suggested: {exercise.defaultSets} sets × {exercise.defaultReps}. Start
           light, master the movement first.
+        </p>
+      </div>
+
+      {/* Muscles worked */}
+      <div className="card mt-4">
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-navy-700/60">
+          Muscles worked
+        </h2>
+        <MuscleMap
+          primary={MUSCLE_INFO[exercise.muscleGroup].primary}
+          secondary={MUSCLE_INFO[exercise.muscleGroup].secondary}
+        />
+        <p className="mt-3 text-sm leading-relaxed text-navy-700/80">
+          <span className="font-semibold text-navy-900">Primary:</span>{" "}
+          {MUSCLE_INFO[exercise.muscleGroup].label}
+          {MUSCLE_INFO[exercise.muscleGroup].secondary.length > 0 && (
+            <>
+              {" · "}
+              <span className="font-semibold text-navy-900">Also works:</span>{" "}
+              {MUSCLE_INFO[exercise.muscleGroup].secondary
+                .map((m) => MUSCLE_INFO[m].label)
+                .join(", ")}
+            </>
+          )}
         </p>
       </div>
 

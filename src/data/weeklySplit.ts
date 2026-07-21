@@ -141,3 +141,63 @@ export const WEEKDAY_FROM_INDEX: Weekday[] = [
 export function getTodayWeekday(now: Date = new Date()): Weekday {
   return WEEKDAY_FROM_INDEX[now.getDay()];
 }
+
+// ------------------------------------------------------------------
+// Customizable split
+// ------------------------------------------------------------------
+
+export type FocusPairKey = "chest_triceps" | "back_biceps" | "legs_shoulders";
+export type SplitDayKey = FocusPairKey | "rest";
+
+export interface FocusPair {
+  label: string;
+  focus: [MuscleGroup, MuscleGroup];
+}
+
+/** The three trainable focus pairs a day can be assigned. */
+export const FOCUS_PAIRS: Record<FocusPairKey, FocusPair> = {
+  chest_triceps: { label: "Chest & Triceps", focus: ["chest", "triceps"] },
+  back_biceps: { label: "Back & Biceps", focus: ["back", "biceps"] },
+  legs_shoulders: { label: "Legs & Shoulders", focus: ["legs", "shoulders"] },
+};
+
+/** Weekdays a user can assign (Sunday stays a rest day). */
+export const WEEKDAYS_MON_SAT: Weekday[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+
+export const ALL_WEEKDAYS: Weekday[] = [...WEEKDAYS_MON_SAT, "sunday"];
+
+/** The classic default: Chest&Tri / Back&Bi / Legs&Sho, twice through. */
+export const DEFAULT_SPLIT_KEYS: SplitDayKey[] = [
+  "chest_triceps",
+  "back_biceps",
+  "legs_shoulders",
+  "chest_triceps",
+  "back_biceps",
+  "legs_shoulders",
+];
+
+const VALID_KEYS: SplitDayKey[] = [
+  "chest_triceps",
+  "back_biceps",
+  "legs_shoulders",
+  "rest",
+];
+
+/** Coerce stored/user input into a safe 6-length Mon–Sat key array. */
+export function normalizeSplitKeys(input: unknown): SplitDayKey[] {
+  if (!Array.isArray(input) || input.length !== 6) return [...DEFAULT_SPLIT_KEYS];
+  return input.map((k) =>
+    VALID_KEYS.includes(k as SplitDayKey) ? (k as SplitDayKey) : "rest"
+  );
+}
+
+export function focusPairLabel(key: SplitDayKey): string {
+  return key === "rest" ? "Rest" : FOCUS_PAIRS[key].label;
+}

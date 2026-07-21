@@ -14,6 +14,10 @@ export interface Profile {
   target_weight_kg: number | null;
   goal: Goal | null;
   fitness_level: FitnessLevel | null;
+  /** Custom Mon–Sat split (6 focus keys); null = default split. */
+  custom_split: string[] | null;
+  /** Public URL of the uploaded profile photo; null = show initials. */
+  avatar_url: string | null;
   created_at: string;
 }
 

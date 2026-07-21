@@ -17,6 +17,8 @@ create table if not exists public.profiles (
   target_weight_kg numeric(5, 1) check (target_weight_kg between 20 and 400),
   goal text check (goal in ('lose', 'gain', 'maintain')),
   fitness_level text check (fitness_level in ('beginner', 'intermediate', 'advanced')),
+  custom_split jsonb,           -- user's Mon–Sat split; null = default
+  avatar_url text,              -- public URL of uploaded profile photo
   created_at timestamptz not null default now()
 );
 
@@ -125,3 +127,25 @@ create policy "learned_exercises: insert own" on public.learned_exercises
   for insert with check (auth.uid() = user_id);
 create policy "learned_exercises: delete own" on public.learned_exercises
   for delete using (auth.uid() = user_id);
+
+-- ============================================================
+-- Storage: profile photos (bucket "avatars", public read)
+-- Files are stored at "<user-id>/avatar.<ext>" so a user can only
+-- write inside their own folder.
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+create policy "avatars: public read" on storage.objects
+  for select using (bucket_id = 'avatars');
+create policy "avatars: user upload" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "avatars: user update" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "avatars: user delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);

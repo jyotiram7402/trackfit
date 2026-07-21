@@ -47,6 +47,14 @@ Project skeleton only:
   pill-style bottom nav, Recharts split out of the initial bundle via
   `next/dynamic`, friendly empty states, PWA manifest + SVG app icon
   (installable from the browser menu)
+- ✅ Customizable weekly split (`/settings/split`) — reassign any day's focus
+  and "rebuild this week now"; generator handles any split (1–6 days/muscle)
+  while keeping the no-repeat-within-week rule
+- ✅ Explore library (`/explore`) — browse exercises by muscle group + cardio
+  + warm-ups, each with SVG muscle-map diagram, curated rating, and link to
+  the full how-to page
+- ✅ Profile photo upload (Supabase Storage `avatars` bucket), initials shown
+  until one is set
 
 ## Supabase setup (do this once)
 
@@ -74,7 +82,10 @@ Open the Supabase dashboard → your project → **SQL Editor** (left sidebar) �
 > [`migration-b2-learned-exercises.sql`](supabase/migration-b2-learned-exercises.sql)
 > adds the `learned_exercises` table;
 > [`migration-b3-feeling.sql`](supabase/migration-b3-feeling.sql) adds the
-> `feeling` column to `workout_logs`.
+> `feeling` column to `workout_logs`;
+> [`migration-c1-split-avatar.sql`](supabase/migration-c1-split-avatar.sql)
+> adds the `custom_split` + `avatar_url` columns and the `avatars` storage
+> bucket (for profile photos).
 
 ### 3. (Optional) Email confirmation
 
