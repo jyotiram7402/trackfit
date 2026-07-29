@@ -11,6 +11,7 @@ import { CARDIO_BY_ID, EXERCISES_BY_ID, demoVideoUrl } from "@/data/exercises";
 import { getExerciseGuide } from "@/data/exerciseGuides";
 import { addDays, toISODate } from "@/lib/dates";
 import { hardLastTimeIds, type CoachLog } from "@/lib/coach";
+import { fetchDaySelection, resolveStrength } from "@/lib/todayWorkout";
 import WatchDemoLink from "@/components/WatchDemoLink";
 import type { Feeling } from "@/types/db";
 
@@ -77,9 +78,22 @@ export default function GuidedModePage() {
   const day = plan?.days.find((d) => d.day === getTodayWeekday()) ?? null;
   const trainingDay = day && day.kind === "training" ? day : null;
 
+  // Same hand-picked selection as the Today screen (null = auto plan).
+  const [selectionIds, setSelectionIds] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchDaySelection(userId, todayISO).then((ids) => {
+      if (!cancelled) setSelectionIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, todayISO]);
+
   const items: GuidedItem[] = useMemo(() => {
-    if (!trainingDay) return [];
-    return [...trainingDay.exercises, ...trainingDay.abs].map((e) => ({
+    if (!plan || !trainingDay) return [];
+    return resolveStrength(plan, trainingDay, selectionIds).map((e) => ({
       id: e.exerciseId,
       name: e.name,
       muscleGroup: e.muscleGroup,
@@ -88,7 +102,7 @@ export default function GuidedModePage() {
       videoUrl: EXERCISES_BY_ID.get(e.exerciseId)?.videoUrl ?? demoVideoUrl(e.name),
       startingTip: e.startingWeight,
     }));
-  }, [trainingDay]);
+  }, [plan, trainingDay, selectionIds]);
 
   const restSeconds = plan ? parseRestSeconds(plan.prescription.rest) : 60;
 

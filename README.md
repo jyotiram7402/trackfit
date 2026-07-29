@@ -55,6 +55,10 @@ Project skeleton only:
   the full how-to page
 - ✅ Profile photo upload (Supabase Storage `avatars` bucket), initials shown
   until one is set
+- ✅ Choose-your-own exercises (`day_selections`) — Today & Guided let you
+  pick from the full pool for each focus muscle; exercises already trained
+  earlier this week are flagged ("✓ Done Mon") so you can vary the repeat day;
+  resets automatically each week
 
 ## Supabase setup (do this once)
 
@@ -85,7 +89,9 @@ Open the Supabase dashboard → your project → **SQL Editor** (left sidebar) �
 > `feeling` column to `workout_logs`;
 > [`migration-c1-split-avatar.sql`](supabase/migration-c1-split-avatar.sql)
 > adds the `custom_split` + `avatar_url` columns and the `avatars` storage
-> bucket (for profile photos).
+> bucket (for profile photos);
+> [`migration-c2-day-selections.sql`](supabase/migration-c2-day-selections.sql)
+> adds the `day_selections` table (hand-picked exercises per day).
 
 ### 3. (Optional) Email confirmation
 

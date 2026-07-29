@@ -9,7 +9,15 @@ import { getTodayWeekday } from "@/data/weeklySplit";
 import { CARDIO_BY_ID, EXERCISES_BY_ID, demoVideoUrl } from "@/data/exercises";
 import { addDays, toISODate } from "@/lib/dates";
 import { hardLastTimeIds, type CoachLog } from "@/lib/coach";
+import {
+  deleteDaySelection,
+  fetchDaySelection,
+  fetchWeekDoneMap,
+  resolveStrength,
+  saveDaySelection,
+} from "@/lib/todayWorkout";
 import WatchDemoLink from "@/components/WatchDemoLink";
+import ExercisePicker from "@/components/ExercisePicker";
 import type { GeneratedTrainingDay } from "@/types/plan";
 
 /** One loggable item on today's list (strength, abs, or cardio). */
@@ -48,9 +56,15 @@ export default function TodayPage() {
 
   const day = plan?.days.find((d) => d.day === today) ?? null;
 
+  // null = the user hasn't customized today (use the auto plan).
+  const [selectionIds, setSelectionIds] = useState<string[] | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
+  const [weekDone, setWeekDone] = useState<Map<string, string>>(new Map());
+  const [savingSelection, setSavingSelection] = useState(false);
+
   const items: TodayItem[] = useMemo(() => {
-    if (!day || day.kind !== "training") return [];
-    const strengthAndAbs = [...day.exercises, ...day.abs].map((e) => ({
+    if (!plan || !day || day.kind !== "training") return [];
+    const strengthAndAbs = resolveStrength(plan, day, selectionIds).map((e) => ({
       id: e.exerciseId,
       name: e.name,
       muscleGroup: e.muscleGroup,
@@ -68,7 +82,7 @@ export default function TodayPage() {
       isCardio: true,
     };
     return [...strengthAndAbs, cardio];
-  }, [day]);
+  }, [plan, day, selectionIds]);
 
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [learnedIds, setLearnedIds] = useState<Set<string> | null>(null);
@@ -139,12 +153,49 @@ export default function TodayPage() {
     };
   }, [userId, todayISO]);
 
+  // Load the user's hand-picked selection (if any) + what's done this week.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchDaySelection(userId, todayISO).then((ids) => {
+      if (!cancelled) setSelectionIds(ids);
+    });
+    fetchWeekDoneMap(userId).then((m) => {
+      if (!cancelled) setWeekDone(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, todayISO]);
+
   function updateEntry(id: string, patch: Partial<Entry>) {
     setEntries((prev) => ({
       ...prev,
       [id]: { ...(prev[id] ?? EMPTY_ENTRY), ...patch },
     }));
     setSavedAt(null);
+  }
+
+  async function handleSaveSelection(ids: string[]) {
+    if (!userId) return;
+    setSavingSelection(true);
+    try {
+      await saveDaySelection(userId, todayISO, ids);
+      setSelectionIds(ids);
+      setShowPicker(false);
+      setSavedAt(null);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Couldn't save your picks.");
+    } finally {
+      setSavingSelection(false);
+    }
+  }
+
+  async function handleResetSelection() {
+    if (!userId) return;
+    await deleteDaySelection(userId, todayISO);
+    setSelectionIds(null);
+    setShowPicker(false);
   }
 
   const doneCount = items.filter((i) => entries[i.id]?.completed).length;
@@ -235,7 +286,7 @@ export default function TodayPage() {
       title: muscle[0].toUpperCase() + muscle.slice(1),
       items: items.filter((i) => i.muscleGroup === muscle),
     })),
-    ...(trainingDay.abs.length > 0
+    ...(items.some((i) => i.muscleGroup === "abs")
       ? [{ title: "Abs", items: items.filter((i) => i.muscleGroup === "abs") }]
       : []),
     { title: "Cardio", items: items.filter((i) => i.isCardio) },
@@ -284,6 +335,35 @@ export default function TodayPage() {
         </span>
       </Link>
 
+      <button
+        type="button"
+        onClick={() => setShowPicker(true)}
+        className="mt-3 flex w-full items-center justify-between rounded-xl border-2 border-aero-200 px-4 py-3 text-sm font-semibold text-aero-700 transition-colors hover:border-aero-400"
+      >
+        <span>
+          ✏️ Choose / swap today&apos;s exercises
+          {selectionIds && (
+            <span className="ml-2 rounded-full bg-aero-100 px-2 py-0.5 text-[10px] font-bold text-aero-700">
+              customized
+            </span>
+          )}
+        </span>
+        <span aria-hidden>→</span>
+      </button>
+
+      {showPicker && (
+        <ExercisePicker
+          focusMuscles={trainingDay.focus}
+          includeAbs={trainingDay.abs.length > 0}
+          initialSelectedIds={items.filter((i) => !i.isCardio).map((i) => i.id)}
+          doneThisWeek={weekDone}
+          saving={savingSelection}
+          onCancel={() => setShowPicker(false)}
+          onSave={handleSaveSelection}
+          onReset={selectionIds ? handleResetSelection : undefined}
+        />
+      )}
+
       {sections.map((section) => (
         <div key={section.title} className="mt-7">
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-navy-700/60">
@@ -301,6 +381,7 @@ export default function TodayPage() {
                   !learnedIds.has(item.id)
                 }
                 feltHard={hardIds.has(item.id)}
+                alreadyThisWeek={item.isCardio ? undefined : weekDone.get(item.id)}
                 onChange={(patch) => updateEntry(item.id, patch)}
               />
             ))}
@@ -336,12 +417,14 @@ function ExerciseCard({
   entry,
   needsReview,
   feltHard,
+  alreadyThisWeek,
   onChange,
 }: {
   item: TodayItem;
   entry: Entry;
   needsReview: boolean;
   feltHard: boolean;
+  alreadyThisWeek?: string;
   onChange: (patch: Partial<Entry>) => void;
 }) {
   const [showLog, setShowLog] = useState(false);
@@ -382,6 +465,11 @@ function ExerciseCard({
             </Link>
           )}
           <p className="text-sm text-navy-700/60">{item.target}</p>
+          {alreadyThisWeek && (
+            <p className="mt-1 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
+              ✓ Already trained this {alreadyThisWeek}
+            </p>
+          )}
           {feltHard && (
             <p className="mt-1 text-xs font-medium text-orange-700">
               🧘 Felt tough last time — start a little lighter and focus on
