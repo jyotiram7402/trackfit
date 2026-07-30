@@ -33,14 +33,18 @@ interface TodayItem {
   startingTip?: string;
 }
 
-interface Entry {
-  completed: boolean;
-  sets: string;
-  reps: string;
+/** One set the user logs: its own weight and reps. */
+interface SetRow {
   weight: string;
+  reps: string;
 }
 
-const EMPTY_ENTRY: Entry = { completed: false, sets: "", reps: "", weight: "" };
+interface Entry {
+  completed: boolean;
+  sets: SetRow[];
+}
+
+const EMPTY_ENTRY: Entry = { completed: false, sets: [] };
 
 function toNumberOrNull(value: string): number | null {
   if (value.trim() === "") return null;
@@ -61,6 +65,7 @@ export default function TodayPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [weekDone, setWeekDone] = useState<Map<string, string>>(new Map());
   const [savingSelection, setSavingSelection] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   const items: TodayItem[] = useMemo(() => {
     if (!plan || !day || day.kind !== "training") return [];
@@ -99,19 +104,34 @@ export default function TodayPage() {
 
     getSupabaseClient()
       .from("workout_logs")
-      .select("exercise_id, sets_done, reps_done, weight_used, completed")
+      .select("exercise_id, sets_done, reps_done, weight_used, completed, sets_detail")
       .eq("user_id", userId)
       .eq("date", todayISO)
       .then(({ data }) => {
         if (cancelled || !data || data.length === 0) return;
         const restored: Record<string, Entry> = {};
         for (const row of data) {
-          restored[row.exercise_id] = {
-            completed: row.completed,
-            sets: row.sets_done?.toString() ?? "",
-            reps: row.reps_done?.toString() ?? "",
-            weight: row.weight_used?.toString() ?? "",
-          };
+          const detail = Array.isArray(row.sets_detail)
+            ? (row.sets_detail as { weight: number | null; reps: number | null }[])
+            : null;
+          let sets: SetRow[];
+          if (detail && detail.length > 0) {
+            sets = detail.map((s) => ({
+              weight: s.weight?.toString() ?? "",
+              reps: s.reps?.toString() ?? "",
+            }));
+          } else if (row.weight_used != null || row.reps_done != null) {
+            // Legacy single-entry rows saved before per-set logging.
+            sets = [
+              {
+                weight: row.weight_used?.toString() ?? "",
+                reps: row.reps_done?.toString() ?? "",
+              },
+            ];
+          } else {
+            sets = [];
+          }
+          restored[row.exercise_id] = { completed: row.completed, sets };
         }
         setEntries(restored);
         setSavedAt(new Date());
@@ -179,13 +199,16 @@ export default function TodayPage() {
   async function handleSaveSelection(ids: string[]) {
     if (!userId) return;
     setSavingSelection(true);
+    setSelectionError(null);
     try {
       await saveDaySelection(userId, todayISO, ids);
       setSelectionIds(ids);
       setShowPicker(false);
       setSavedAt(null);
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Couldn't save your picks.");
+      setSelectionError(
+        e instanceof Error ? e.message : "Couldn't save your picks."
+      );
     } finally {
       setSavingSelection(false);
     }
@@ -206,9 +229,35 @@ export default function TodayPage() {
     setSaving(true);
     setSaveError(null);
 
+    interface LogInsert {
+      user_id: string;
+      date: string;
+      day_type: string;
+      exercise_id: string;
+      exercise_name: string;
+      muscle_group: string;
+      sets_done: number | null;
+      reps_done: number | null;
+      weight_used: number | null;
+      sets_detail: { weight: number | null; reps: number | null }[] | null;
+      completed: boolean;
+    }
+
     const supabase = getSupabaseClient();
-    const rows = items.map((item) => {
+    const rows: LogInsert[] = items.map((item) => {
       const entry = entries[item.id] ?? EMPTY_ENTRY;
+      // Keep only sets where the user typed something.
+      const filled = entry.sets.filter(
+        (s) => s.weight.trim() !== "" || s.reps.trim() !== ""
+      );
+      const detail = filled.map((s) => ({
+        weight: toNumberOrNull(s.weight),
+        reps: toNumberOrNull(s.reps),
+      }));
+      const weights = detail
+        .map((s) => s.weight)
+        .filter((w): w is number => w != null);
+
       return {
         user_id: userId,
         date: todayISO,
@@ -216,9 +265,10 @@ export default function TodayPage() {
         exercise_id: item.id,
         exercise_name: item.name,
         muscle_group: item.muscleGroup,
-        sets_done: item.isCardio ? null : toNumberOrNull(entry.sets),
-        reps_done: item.isCardio ? null : toNumberOrNull(entry.reps),
-        weight_used: item.isCardio ? null : toNumberOrNull(entry.weight),
+        sets_done: item.isCardio ? null : detail.length || null,
+        reps_done: null,
+        weight_used: item.isCardio || weights.length === 0 ? null : Math.max(...weights),
+        sets_detail: item.isCardio || detail.length === 0 ? null : detail,
         completed: entry.completed,
       };
     });
@@ -337,7 +387,10 @@ export default function TodayPage() {
 
       <button
         type="button"
-        onClick={() => setShowPicker(true)}
+        onClick={() => {
+          setSelectionError(null);
+          setShowPicker(true);
+        }}
         className="mt-3 flex w-full items-center justify-between rounded-xl border-2 border-aero-200 px-4 py-3 text-sm font-semibold text-aero-700 transition-colors hover:border-aero-400"
       >
         <span>
@@ -358,6 +411,7 @@ export default function TodayPage() {
           initialSelectedIds={items.filter((i) => !i.isCardio).map((i) => i.id)}
           doneThisWeek={weekDone}
           saving={savingSelection}
+          error={selectionError}
           onCancel={() => setShowPicker(false)}
           onSave={handleSaveSelection}
           onReset={selectionIds ? handleResetSelection : undefined}
@@ -428,6 +482,18 @@ function ExerciseCard({
   onChange: (patch: Partial<Entry>) => void;
 }) {
   const [showLog, setShowLog] = useState(false);
+
+  const setRows = (next: SetRow[]) => onChange({ sets: next });
+  const addSet = () => setRows([...entry.sets, { weight: "", reps: "" }]);
+  const updateSet = (i: number, field: keyof SetRow, val: string) =>
+    setRows(entry.sets.map((s, j) => (j === i ? { ...s, [field]: val } : s)));
+  const removeSet = (i: number) => setRows(entry.sets.filter((_, j) => j !== i));
+
+  function toggleLog() {
+    // Opening an empty log? Seed one set so there's a row to type into.
+    if (!showLog && entry.sets.length === 0) addSet();
+    setShowLog((v) => !v);
+  }
 
   return (
     <div
@@ -507,69 +573,92 @@ function ExerciseCard({
         {!item.isCardio && (
           <button
             type="button"
-            onClick={() => setShowLog((v) => !v)}
+            onClick={toggleLog}
             className="flex-1 rounded-xl border-2 border-aero-200 px-3 py-2.5 text-sm font-semibold text-aero-700 transition-colors hover:border-aero-400"
           >
-            {showLog ? "Hide log" : "Log sets"}
+            {showLog ? "Hide log" : `Log sets${entry.sets.length ? ` (${entry.sets.length})` : ""}`}
           </button>
         )}
       </div>
 
       {showLog && !item.isCardio && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <LogInput
-            label="Sets"
-            value={entry.sets}
-            placeholder="3"
-            onChange={(v) => onChange({ sets: v })}
-          />
-          <LogInput
-            label="Reps"
-            value={entry.reps}
-            placeholder="12"
-            onChange={(v) => onChange({ reps: v })}
-          />
-          <LogInput
-            label="Weight (kg)"
-            value={entry.weight}
-            placeholder="20"
-            step="0.5"
-            onChange={(v) => onChange({ weight: v })}
-          />
+        <div className="mt-3">
+          <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-x-2 gap-y-2">
+            {entry.sets.map((s, i) => (
+              <SetInputRow
+                key={i}
+                index={i}
+                set={s}
+                onWeight={(v) => updateSet(i, "weight", v)}
+                onReps={(v) => updateSet(i, "reps", v)}
+                onRemove={() => removeSet(i)}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={addSet}
+            className="mt-3 w-full rounded-xl border-2 border-dashed border-aero-300 px-3 py-2 text-sm font-semibold text-aero-700 transition-colors hover:border-aero-500"
+          >
+            + Add set
+          </button>
+          <p className="mt-1.5 text-[11px] text-navy-700/50">
+            Log each set with its own weight — e.g. 20 kg × 12, 30 kg × 10, 40 kg × 8.
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function LogInput({
-  label,
-  value,
-  placeholder,
-  step,
-  onChange,
+function SetInputRow({
+  index,
+  set,
+  onWeight,
+  onReps,
+  onRemove,
 }: {
-  label: string;
-  value: string;
-  placeholder: string;
-  step?: string;
-  onChange: (value: string) => void;
+  index: number;
+  set: SetRow;
+  onWeight: (v: string) => void;
+  onReps: (v: string) => void;
+  onRemove: () => void;
 }) {
+  const inputCls =
+    "w-full rounded-lg border border-aero-200 bg-white px-2 py-2 text-center text-sm font-semibold outline-none placeholder:font-normal placeholder:text-navy-700/30 focus:border-aero-500";
   return (
-    <label className="block">
-      <span className="mb-1 block text-[11px] font-semibold text-navy-700/60">
-        {label}
-      </span>
+    <>
+      <span className="text-xs font-bold text-navy-700/50">Set {index + 1}</span>
       <input
         type="number"
         inputMode="decimal"
         min={0}
-        step={step}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-aero-200 bg-white px-3 py-2.5 text-center text-sm font-semibold outline-none placeholder:font-normal placeholder:text-navy-700/30 focus:border-aero-500"
+        step="0.5"
+        value={set.weight}
+        placeholder="kg"
+        aria-label={`Set ${index + 1} weight in kg`}
+        onChange={(e) => onWeight(e.target.value)}
+        className={inputCls}
       />
-    </label>
+      <span className="text-xs text-navy-700/40">×</span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        value={set.reps}
+        placeholder="reps"
+        aria-label={`Set ${index + 1} reps`}
+        onChange={(e) => onReps(e.target.value)}
+        className={inputCls}
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove set ${index + 1}`}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-navy-700/40 hover:bg-red-50 hover:text-red-600"
+      >
+        ✕
+      </button>
+    </>
   );
 }

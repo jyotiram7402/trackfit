@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { addDays, getWeekStart, toISODate } from "@/lib/dates";
+import WorkoutHistory from "@/components/WorkoutHistory";
 import type { WeightLog } from "@/types/db";
 
 // Recharts is the heaviest dependency in the app — stream it in after the
@@ -237,6 +238,8 @@ export default function ProgressPage() {
           })
         }
       />
+
+      <WorkoutHistory userId={userId} />
     </section>
   );
 }

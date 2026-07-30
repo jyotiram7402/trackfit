@@ -59,6 +59,10 @@ Project skeleton only:
   pick from the full pool for each focus muscle; exercises already trained
   earlier this week are flagged ("✓ Done Mon") so you can vary the repeat day;
   resets automatically each week
+- ✅ Per-set logging (`sets_detail`) — log each set with its own weight × reps
+  (e.g. 20×12, 30×10, 40×8), add/remove sets freely
+- ✅ Workout history on Progress — review completed workouts by week / month /
+  3 months with the sets and weights you actually lifted
 
 ## Supabase setup (do this once)
 
@@ -91,7 +95,9 @@ Open the Supabase dashboard → your project → **SQL Editor** (left sidebar) �
 > adds the `custom_split` + `avatar_url` columns and the `avatars` storage
 > bucket (for profile photos);
 > [`migration-c2-day-selections.sql`](supabase/migration-c2-day-selections.sql)
-> adds the `day_selections` table (hand-picked exercises per day).
+> adds the `day_selections` table (hand-picked exercises per day);
+> [`migration-c3-sets-detail.sql`](supabase/migration-c3-sets-detail.sql)
+> adds the `sets_detail` column (per-set weight × reps logging).
 
 ### 3. (Optional) Email confirmation
 

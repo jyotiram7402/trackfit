@@ -33,7 +33,8 @@ create table if not exists public.workout_logs (
   muscle_group text,
   sets_done integer,
   reps_done integer,
-  weight_used numeric(6, 2),    -- kg
+  weight_used numeric(6, 2),    -- kg (heaviest set, kept for coaching/summary)
+  sets_detail jsonb,            -- [{weight, reps}, ...] per-set log
   completed boolean not null default false,
   feeling text check (feeling in ('easy', 'right', 'hard')),
   created_at timestamptz not null default now()

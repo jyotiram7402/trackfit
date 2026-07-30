@@ -18,6 +18,7 @@ export default function ExercisePicker({
   initialSelectedIds,
   doneThisWeek,
   saving,
+  error,
   onCancel,
   onSave,
   onReset,
@@ -27,6 +28,7 @@ export default function ExercisePicker({
   initialSelectedIds: string[];
   doneThisWeek: Map<string, string>;
   saving: boolean;
+  error?: string | null;
   onCancel: () => void;
   onSave: (ids: string[]) => void;
   onReset?: () => void;
@@ -151,6 +153,11 @@ export default function ExercisePicker({
 
       {/* Sticky footer */}
       <div className="border-t border-aero-200 bg-white px-5 py-4">
+        {error && (
+          <p className="mb-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            {error}
+          </p>
+        )}
         {onReset && (
           <button
             type="button"

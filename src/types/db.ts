@@ -24,6 +24,12 @@ export interface Profile {
 /** How a finished exercise felt — drives future plan adjustments. */
 export type Feeling = "easy" | "right" | "hard";
 
+/** One logged set: its own weight and reps. */
+export interface SetDetail {
+  weight: number | null;
+  reps: number | null;
+}
+
 export interface WorkoutLog {
   id: string;
   user_id: string;
@@ -35,6 +41,7 @@ export interface WorkoutLog {
   sets_done: number | null;
   reps_done: number | null;
   weight_used: number | null;
+  sets_detail: SetDetail[] | null;
   completed: boolean;
   feeling: Feeling | null;
   created_at: string;
